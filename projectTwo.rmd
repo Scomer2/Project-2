@@ -1,0 +1,147 @@
+---
+title: "Project Two"
+author: "Scott Comer"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#load the mlbench package which has the BreastCancer data set
+require(mlbench)
+library(rpart)
+library(caret)
+library(neuralnet)
+library(e1071)
+library(randomForest)
+library(FNN)
+#load the mlbench package which has the BreastCancer data set
+
+```
+
+```{r}
+# load the data set
+data(BreastCancer)
+#remove NAs
+BreastCancer <- na.omit(BreastCancer)
+```
+
+```{r}
+#Create training and validation sets
+set.seed(1234)
+train.rows <- sample(rownames(BreastCancer), dim(BreastCancer)[1]*0.6)
+training.data <- BreastCancer[train.rows, ]
+
+valid.rows<-setdiff(rownames(BreastCancer), train.rows)
+valid.data<-BreastCancer[valid.rows, ]
+
+#Removed unique Identifiers
+training.data<-training.data[,-1]
+valid.data<-valid.data[,-1]
+```
+
+```{r}
+#create first classifier - decision tree
+dectree<-rpart(Class~., data = training.data)
+predtree<-predict(dectree, valid.data, type = "class")
+table(predtree,valid.data$Class)
+confusionMatrix(predtree, valid.data$Class)
+```
+
+```{r}
+#create second classifier -naive bayes
+cancer.nb<-naiveBayes(Class ~ ., data = training.data)
+#cancer.nb
+pred.nb <- predict(cancer.nb, newdata = training.data)
+confusionMatrix(pred.nb, training.data$Class)
+
+pred2.nb<-predict(cancer.nb, newdata = valid.data)
+table(pred2.nb,valid.data$Class)
+confusionMatrix(pred2.nb, valid.data$Class)
+```
+
+
+```{r}
+#create third classifier -random forest
+ranfor<- randomForest(Class ~ ., data = training.data, ntree= 500, na.action = na.roughfix)
+
+ranfor.pred<-predict(ranfor, valid.data)
+table(ranfor.pred,valid.data$Class)
+confusionMatrix(ranfor.pred, valid.data$Class)
+```
+
+```{r}
+#create fourth classifier -neuralnet
+#Change from factors to numberic
+BreastCancer$Cl.thickness<-as.numeric(as.character(BreastCancer$Cl.thickness))
+BreastCancer$Cell.size<-as.numeric(as.character(BreastCancer$Cell.size))
+BreastCancer$Cell.shape<-as.numeric(as.character(BreastCancer$Cell.shape))
+BreastCancer$Marg.adhesion<-as.numeric(as.character(BreastCancer$Marg.adhesion))
+BreastCancer$Epith.c.size<-as.numeric(as.character(BreastCancer$Epith.c.size))
+BreastCancer$Bare.nuclei<-as.numeric(as.character(BreastCancer$Bare.nuclei))
+BreastCancer$Bl.cromatin<-as.numeric(as.character(BreastCancer$Bl.cromatin))
+BreastCancer$Normal.nucleoli<-as.numeric(as.character(BreastCancer$Normal.nucleoli))
+BreastCancer$Mitoses<-as.numeric(as.character(BreastCancer$Mitoses))
+#Change Class to binary numeric
+BreastCancer$Class<-1*(BreastCancer$Class=="benign")
+
+#run neural net with one hidden layer with three nodes
+neuraln<-neuralnet(Class~., data = BreastCancer[,-1], linear.output = F, hidden = 3)
+neuraln$weights
+#prediction(neuraln)
+plot(neuraln, rep="best")
+
+neuraln$result.matrix
+# Prediction
+output <- compute(neuraln, rep = 1, BreastCancer[, -1])
+#create confusion matrix
+p1 <- output$net.result
+pred1 <- ifelse(p1 > 0.5, 1, 0)
+length(pred1)
+length(BreastCancer$Class)
+table(pred1,BreastCancer$Class)
+tab1 <- table(pred1, BreastCancer$Class)
+tab1
+#miscalculation error
+1 - sum(diag(tab1)) / sum(tab1)
+```
+
+```{r}
+#combine classes
+combine.classes<-data.frame(predtree, pred2.nb,ranfor.pred)
+#head(combine.classes)
+combine.classes[,1]<-ifelse(combine.classes[,2]=="benign", 0, 1)
+combine.classes[,2]<-ifelse(combine.classes[,2]=="benign", 0, 1)
+combine.classes[,3]<-ifelse(combine.classes[,2]=="benign", 0, 1)
+#head(combine.classes)
+
+#Majority vote
+majority.vote=rowSums(combine.classes[,-c(7,8)])
+#head(majority.vote)
+majority.vote<-ifelse(majority.vote>=3, "malignant", "benign")
+table(majority.vote, valid.data$Class)
+
+```
+
+```{r}
+#Check for accuracy
+#Develop Confustion Matrix
+c<-confusionMatrix(as.factor(majority.vote), as.factor(valid.data$Class))
+c
+ctab<-as.matrix(c)
+#accuracy
+accur<-(ctab[1,1]+ctab[1,2])/sum(ctab[1:2,1:2])
+# Precision: tp/(tp+fp):
+prec<-ctab[1,1]/sum(ctab[1,1:2])
+
+# Recall: tp/(tp + fn):
+rec<-ctab[1,1]/sum(ctab[1:2,1])
+
+# F-Score: 2 * precision * recall /(precision + recall):
+Fscore<-2 * prec * rec / (prec + rec)
+```
+
+This program uploaded breastcancer data from kaggle.com. The dataset was divided into training and validation sets. Each one was ran through decision tree, naive bayes, random forest, and neural net classifiers. In the end, the classifiers were ensembled to get the best classifier model.  That model had an accuracy of 65.0%, precision of 99.4%, recall of 96.7%, and a FScore of 98.1%
